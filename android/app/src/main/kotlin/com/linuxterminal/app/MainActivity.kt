@@ -1,9 +1,9 @@
 package com.linuxterminal.app
 
-import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.content.pm.PackageManager
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.linuxterminal.app/native"
@@ -14,7 +14,15 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getNativeLibDir" -> {
-                        result.success(applicationInfo.nativeLibDir)
+                        try {
+                            val ai = applicationContext.packageManager.getApplicationInfo(
+                                applicationContext.packageName,
+                                PackageManager.GET_META_DATA
+                            )
+                            result.success(ai.nativeLibDir)
+                        } catch (e: Exception) {
+                            result.success("")
+                        }
                     }
                     else -> result.notImplemented()
                 }
