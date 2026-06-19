@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:flterm/flterm.dart';
@@ -22,10 +23,18 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = TerminalController()
-      ..onOutput = (bytes) => _pty?.write(bytes)
-      ..onResize = (size) => _pty?.resize(size.rows, size.cols);
+    _controller = TerminalController();
+    _controller.onOutput = _onTerminalOutput;
+    _controller.onResize = _onTerminalResize;
     _runSetup();
+  }
+
+  void _onTerminalOutput(Uint8List bytes) {
+    _pty?.write(bytes);
+  }
+
+  void _onTerminalResize(TerminalSize size) {
+    _pty?.resize(size.rows, size.cols);
   }
 
   Future<void> _runSetup() async {
@@ -39,7 +48,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
       if (mounted) {
         setState(() {
           _isSetupComplete = true;
-          _setupStatus = 'Starting terminal...';
         });
         _startTerminal();
       }
@@ -63,12 +71,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _ptySubscription = _pty!.output.listen(_controller.write);
 
     _pty!.exitCode.then((code) {
-      _controller.write([13, 10]);
+      _controller.write(Uint8List.fromList([13, 10]));
       _controller.write(
-        '${[27, 91, 51, 49, 109]}[process exited: $code]${[27, 91, 48, 109]}'
-            .codeUnits,
+        Uint8List.fromList(
+          '${String.fromCharCode(27)}[31m[process exited: $code]${String.fromCharCode(27)}[0m'
+              .codeUnits,
+        ),
       );
-      _controller.write([13, 10]);
+      _controller.write(Uint8List.fromList([13, 10]));
     });
 
     _pty!.resize(24, 80);
@@ -138,9 +148,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
           Expanded(
             child: TerminalView(
               controller: _controller,
-              theme: TerminalTheme.dark().copyWith(
-                cursor: const CursorTheme(color: Colors.white, shape: CursorShape.block),
-              ),
+              theme: TerminalTheme.dark(),
             ),
           ),
           _buildExtraKeys(),
@@ -151,15 +159,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   Widget _buildExtraKeys() {
     final keys = [
-      ('ESC', [27]),
-      ('TAB', [9]),
-      ('CTRL', <int>[]),
-      ('ALT', <int>[]),
-      ('-', [45]),
-      ('↑', [27, 91, 65]),
-      ('↓', [27, 91, 66]),
-      ('←', [27, 91, 68]),
-      ('→', [27, 91, 67]),
+      ('ESC', Uint8List.fromList([27])),
+      ('TAB', Uint8List.fromList([9])),
+      ('CTRL', Uint8List(0)),
+      ('ALT', Uint8List(0)),
+      ('-', Uint8List.fromList([45])),
+      ('↑', Uint8List.fromList([27, 91, 65])),
+      ('↓', Uint8List.fromList([27, 91, 66])),
+      ('←', Uint8List.fromList([27, 91, 68])),
+      ('→', Uint8List.fromList([27, 91, 67])),
     ];
     return Container(
       color: const Color(0xFF1E1E1E),
