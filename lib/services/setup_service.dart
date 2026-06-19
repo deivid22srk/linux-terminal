@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 class SetupService {
@@ -11,7 +10,6 @@ class SetupService {
 
   static const _rootfsUrl =
       'https://github.com/termux/proot-distro/releases/download/v4.10.0/debian-bookworm-aarch64.tar.gz';
-  static const _channel = MethodChannel('com.linuxterminal.app/native');
 
   Future<void> ensureSetup(void Function(String) onStatus) async {
     final appDir = await getApplicationDocumentsDirectory();
@@ -23,18 +21,35 @@ class SetupService {
     await Directory(_scriptsDir).create(recursive: true);
     await Directory('$_appDir/tmp').create(recursive: true);
 
-    _nativeLibDir = await _getNativeLibDir();
+    _nativeLibDir = _findNativeLibDir();
 
     await _ensureRootfs(onStatus);
     await _writeStartScript();
   }
 
-  Future<String> _getNativeLibDir() async {
+  String _findNativeLibDir() {
     try {
-      return await _channel.invokeMethod('getNativeLibDir');
-    } catch (_) {
-      return '';
-    }
+      final maps = File('/proc/self/maps').readAsStringSync();
+      for (final line in maps.split('\n')) {
+        if (line.contains('libflutter.so')) {
+          final parts = line.split(' ');
+          if (parts.length > 5) {
+            final path = parts.last;
+            final dir = path.substring(0, path.lastIndexOf('/'));
+            if (dir.isNotEmpty) return dir;
+          }
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final linker = File('/proc/self/exe').resolveSymbolicLinksSync();
+      if (linker.contains('/')) {
+        return linker.substring(0, linker.lastIndexOf('/'));
+      }
+    } catch (_) {}
+
+    return '';
   }
 
   Future<void> _ensureRootfs(void Function(String) onStatus) async {
@@ -81,10 +96,9 @@ class SetupService {
 
   Future<void> _writeStartScript() async {
     final prootPath = _findProotPath();
-    final libPath = _nativeLibDir.isNotEmpty ? _nativeLibDir : '';
 
     final script = '''#!/system/bin/sh
-${libPath.isNotEmpty ? "export LD_LIBRARY_PATH=$libPath:\$LD_LIBRARY_PATH" : ""}
+${_nativeLibDir.isNotEmpty ? "export LD_LIBRARY_PATH=$_nativeLibDir:\$LD_LIBRARY_PATH" : ""}
 export PATH=/system/bin:/system/xbin
 
 mkdir -p $_rootfsDir/proc $_rootfsDir/sys $_rootfsDir/dev $_rootfsDir/tmp $_appDir/tmp
@@ -109,10 +123,10 @@ exec $prootPath \\
 
   String _findProotPath() {
     if (_nativeLibDir.isNotEmpty) {
-      final bundled = '$_nativeLibDir/libproot.so';
-      if (File(bundled).existsSync()) return bundled;
-      final bundledBin = '$_nativeLibDir/proot';
-      if (File(bundledBin).existsSync()) return bundledBin;
+      final candidate1 = '$_nativeLibDir/libproot.so';
+      final candidate2 = '$_nativeLibDir/proot';
+      if (File(candidate1).existsSync()) return candidate1;
+      if (File(candidate2).existsSync()) return candidate2;
     }
     return 'proot';
   }
