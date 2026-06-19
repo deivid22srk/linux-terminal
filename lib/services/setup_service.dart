@@ -70,7 +70,7 @@ class SetupService {
     final marker = '$_rootfsDir/.installed';
     if (File(marker).existsSync()) return;
 
-    onStatus('Downloading Debian rootfs (this may take a while)...');
+    onStatus('Downloading Debian rootfs...');
     try {
       final client = HttpClient();
       try {
@@ -81,12 +81,23 @@ class SetupService {
               uri: Uri.parse(_rootfsUrl));
         }
 
-        final data = await response.fold<List<int>>(
-          [],
-          (prev, chunk) => prev..addAll(chunk),
-        );
+        final total = response.contentLength;
+        final chunks = <List<int>>[];
+        var received = 0;
+
+        await for (final chunk in response) {
+          chunks.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            final pct = (received * 100 / total).round();
+            onStatus('Downloading Debian rootfs... $pct% ($_formatBytes(received) / $_formatBytes(total))');
+          } else {
+            onStatus('Downloading Debian rootfs... ${_formatBytes(received)}');
+          }
+        }
+
         final tarball = File('$_appDir/rootfs.tar.xz');
-        await tarball.writeAsBytes(data);
+        await tarball.writeAsBytes(chunks.expand((c) => c).toList());
 
         onStatus('Extracting Debian rootfs...');
         await _extractArchive(tarball.path, _rootfsDir);
@@ -100,6 +111,12 @@ class SetupService {
       onStatus('Download failed: $e');
       rethrow;
     }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   Future<void> _extractArchive(String archivePath, String outputDir) async {

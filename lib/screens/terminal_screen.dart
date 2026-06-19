@@ -101,7 +101,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(),
+              if (_setupStatus.contains('Extracting'))
+                const CircularProgressIndicator()
+              else
+                LinearProgressIndicator(
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               const SizedBox(height: 24),
               Text(
                 _setupStatus,
