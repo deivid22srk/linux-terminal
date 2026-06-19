@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_pty/flutter_pty.dart';
-import 'package:xterm/flutter.dart';
-import 'package:xterm/xterm.dart';
+import 'package:flterm/flterm.dart';
 import '../services/setup_service.dart';
 
 class TerminalScreen extends StatefulWidget {
@@ -14,7 +12,7 @@ class TerminalScreen extends StatefulWidget {
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  final Terminal _terminal = Terminal(maxLines: 10000);
+  late final TerminalController _controller;
   Pty? _pty;
   final SetupService _setup = SetupService();
   bool _isSetupComplete = false;
@@ -24,6 +22,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
+    _controller = TerminalController()
+      ..onOutput = (bytes) => _pty?.write(bytes)
+      ..onResize = (size) => _pty?.resize(size.rows, size.cols);
     _runSetup();
   }
 
@@ -55,32 +56,29 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _pty = Pty.start(
       '/system/bin/sh',
       arguments: [shellPath],
-      columns: _terminal.viewWidth,
-      rows: _terminal.viewHeight,
+      columns: 80,
+      rows: 24,
     );
 
-    _ptySubscription = _pty!.output
-        .cast<List<int>>()
-        .transform(const Utf8Decoder())
-        .listen(_terminal.write);
+    _ptySubscription = _pty!.output.listen(_controller.write);
 
     _pty!.exitCode.then((code) {
-      _terminal.write('\r\n\x1b[31m[process exited: $code]\x1b[0m\r\n');
+      _controller.write([13, 10]);
+      _controller.write(
+        '${[27, 91, 51, 49, 109]}[process exited: $code]${[27, 91, 48, 109]}'
+            .codeUnits,
+      );
+      _controller.write([13, 10]);
     });
 
-    _terminal.onOutput = (data) {
-      _pty?.write(const Utf8Encoder().convert(data));
-    };
-
-    _terminal.onResize = (w, h, pw, ph) {
-      _pty?.resize(h, w);
-    };
+    _pty!.resize(24, 80);
   }
 
   @override
   void dispose() {
     _ptySubscription?.cancel();
     _pty?.kill();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -139,11 +137,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
         children: [
           Expanded(
             child: TerminalView(
-              _terminal,
-              theme: TerminalTheme(
-                cursor: const TextStyle(color: Colors.white),
-                foreground: const TextStyle(color: Color(0xFFD4D4D4)),
-                background: const TextStyle(color: Colors.black),
+              controller: _controller,
+              theme: TerminalTheme.dark().copyWith(
+                cursor: const CursorTheme(color: Colors.white, shape: CursorShape.block),
               ),
             ),
           ),
@@ -155,16 +151,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   Widget _buildExtraKeys() {
     final keys = [
-      _KeyDef('ESC', '\x1b'),
-      _KeyDef('TAB', '\t'),
-      _KeyDef('CTRL', ''),
-      _KeyDef('ALT', ''),
-      _KeyDef('/', '/'),
-      _KeyDef('-', '-'),
-      _KeyDef('↑', '\x1b[A'),
-      _KeyDef('↓', '\x1b[B'),
-      _KeyDef('←', '\x1b[D'),
-      _KeyDef('→', '\x1b[C'),
+      ('ESC', [27]),
+      ('TAB', [9]),
+      ('CTRL', <int>[]),
+      ('ALT', <int>[]),
+      ('-', [45]),
+      ('↑', [27, 91, 65]),
+      ('↓', [27, 91, 66]),
+      ('←', [27, 91, 68]),
+      ('→', [27, 91, 67]),
     ];
     return Container(
       color: const Color(0xFF1E1E1E),
@@ -174,8 +169,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
         children: keys.map((k) {
           return InkWell(
             onTap: () {
-              if (k.value.isNotEmpty) {
-                _pty?.write(utf8.encode(k.value));
+              if (k.$2.isNotEmpty) {
+                _pty?.write(k.$2);
               }
             },
             child: Container(
@@ -186,7 +181,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                k.label,
+                k.$1,
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
@@ -195,10 +190,4 @@ class _TerminalScreenState extends State<TerminalScreen> {
       ),
     );
   }
-}
-
-class _KeyDef {
-  final String label;
-  final String value;
-  const _KeyDef(this.label, this.value);
 }

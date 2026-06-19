@@ -24,8 +24,8 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.linuxterminal.app"
-    compileSdk flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+    compileSdk 35
+    ndkVersion "25.1.8937393"
 
     compileOptions {
         coreLibraryDesugaringEnabled true
@@ -44,7 +44,7 @@ android {
     defaultConfig {
         applicationId "com.linuxterminal.app"
         minSdk 24
-        targetSdk flutter.targetSdkVersion
+        targetSdk 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         ndk {
