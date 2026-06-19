@@ -1,0 +1,98 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.22.0'
+          architecture: x64
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter config --no-analytics
+          flutter pub get
+
+      - name: Download and bundle proot binary
+        run: |
+          set -e
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+
+          echo "Downloading proot package from Termux repository..."
+          PKG_URL="https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz"
+          DEB_NAME=$(curl -sL "$PKG_URL" | gunzip 2>/dev/null | grep -A20 'Package: proot$' | grep 'Filename:' | head -1 | cut -d' ' -f2 || true)
+
+          if [ -n "$DEB_NAME" ] && [ "$DEB_NAME" != " " ]; then
+            FULL_URL="https://packages.termux.dev/apt/termux-main/$DEB_NAME"
+            echo "Downloading: $FULL_URL"
+            wget -q "$FULL_URL" -O proot.deb || { echo "Download failed"; exit 1; }
+            
+            echo "Extracting proot..."
+            ar x proot.deb
+            ls -la
+            for tarfile in data.tar.*; do
+              case "$tarfile" in
+                *.xz) tar xf "$tarfile" 2>/dev/null || true ;;
+                *.gz) tar xzf "$tarfile" 2>/dev/null || true ;;
+                *.zst) zstd -d "$tarfile" -o data.tar && tar xf data.tar 2>/dev/null || true ;;
+              esac
+            done
+
+            echo "Copying binaries..."
+            find . -path '*/usr/bin/proot' -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \; 2>/dev/null || true
+            find . -name 'libproot.so' -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \; 2>/dev/null || true
+            find . -name 'libtalloc.so' -exec cp {} android/app/src/main/jniLibs/arm64-v8a/ \; 2>/dev/null || true
+            
+            if [ -f android/app/src/main/jniLibs/arm64-v8a/proot ]; then
+              chmod +x android/app/src/main/jniLibs/arm64-v8a/*
+              echo "Proot binaries bundled successfully"
+              ls -la android/app/src/main/jniLibs/arm64-v8a/
+            else
+              echo "Warning: proot binary not found in package"
+            fi
+            
+            rm -rf data.tar* control.tar* debian-binary proot.deb
+          else
+            echo "Warning: Could not find proot package in repository"
+          fi
+
+      - name: Build APK
+        run: |
+          flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-terminal-arm64-v8a
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: Linux Terminal v${{ github.run_number }}
+          tag_name: v${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/app-release.apk
+          generate_release_notes: true

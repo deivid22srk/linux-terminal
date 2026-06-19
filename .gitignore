@@ -1,0 +1,11 @@
+.dart_tool/
+.packages
+build/
+flutter/
+*.iml
+.idea/
+.vscode/
+*.log
+*.apk
+*.aab
+local.properties
