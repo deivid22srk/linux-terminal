@@ -33,8 +33,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _pty?.write(bytes);
   }
 
-  void _onTerminalResize(TerminalSize size) {
-    _pty?.resize(size.rows, size.cols);
+  void _onTerminalResize(int cols, int rows) {
+    _pty?.resize(rows, cols);
   }
 
   Future<void> _runSetup() async {
