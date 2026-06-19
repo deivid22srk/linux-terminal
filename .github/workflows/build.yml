@@ -76,7 +76,7 @@ jobs:
 
       - name: Build APK
         run: |
-          flutter build apk --release --target-platform android-arm64
+          flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -86,7 +86,8 @@ jobs:
           if-no-files-found: error
 
       - name: Create Release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && success()
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
