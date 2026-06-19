@@ -114,7 +114,8 @@ class SetupService {
       final dest = File('$outputDir/$name');
       if (entry.isFile) {
         await dest.parent.create(recursive: true);
-        await dest.writeAsBytes(entry.content as List<int>);
+        final data = entry.readBytes();
+        if (data != null) await dest.writeAsBytes(data);
       } else {
         await dest.create(recursive: true);
       }
