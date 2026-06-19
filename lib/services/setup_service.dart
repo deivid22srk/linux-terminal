@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -52,7 +53,7 @@ class SetupService {
     return '';
   }
 
-  int _detectStripCount(Archive tar) {
+  static int _detectStripCount(Archive tar) {
     if (tar.isEmpty) return 0;
     final first = tar.first;
     if (!first.isFile) {
@@ -120,6 +121,10 @@ class SetupService {
   }
 
   Future<void> _extractArchive(String archivePath, String outputDir) async {
+    await Isolate.run(() => _extractInIsolate(archivePath, outputDir));
+  }
+
+  static void _extractInIsolate(String archivePath, String outputDir) {
     final bytes = File(archivePath).readAsBytesSync();
     final decompressed = XZDecoder().decodeBytes(bytes);
     final tar = TarDecoder().decodeBytes(decompressed);
@@ -130,11 +135,11 @@ class SetupService {
       if (name.isEmpty) continue;
       final dest = File('$outputDir/$name');
       if (entry.isFile) {
-        await dest.parent.create(recursive: true);
+        dest.parent.createSync(recursive: true);
         final data = entry.readBytes();
-        if (data != null) await dest.writeAsBytes(data);
+        if (data != null) dest.writeAsBytesSync(data);
       } else {
-        await dest.create(recursive: true);
+        dest.createSync(recursive: true);
       }
     }
   }
