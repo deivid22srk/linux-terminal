@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  archive: ^3.6.0
   flterm: ^0.0.3
   flutter_pty: ^0.4.2
   path_provider: ^2.1.0

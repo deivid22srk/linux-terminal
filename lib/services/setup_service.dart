@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 
 class SetupService {
@@ -9,7 +9,7 @@ class SetupService {
   late final String _nativeLibDir;
 
   static const _rootfsUrl =
-      'https://github.com/termux/proot-distro/releases/download/v4.10.0/debian-bookworm-aarch64.tar.gz';
+      'https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-aarch64-pd-v4.17.3.tar.xz';
 
   Future<void> ensureSetup(void Function(String) onStatus) async {
     final appDir = await getApplicationDocumentsDirectory();
@@ -52,6 +52,20 @@ class SetupService {
     return '';
   }
 
+  int _detectStripCount(Archive tar) {
+    if (tar.isEmpty) return 0;
+    final first = tar.first;
+    if (!first.isFile) {
+      final parts = first.name.split('/');
+      if (parts.length > 1 && RegExp(r'^[^/]+$').hasMatch(parts[0])) {
+        final prefix = parts[0];
+        final allSame = tar.every((e) => e.name.startsWith('$prefix/'));
+        if (allSame) return 1;
+      }
+    }
+    return 0;
+  }
+
   Future<void> _ensureRootfs(void Function(String) onStatus) async {
     final marker = '$_rootfsDir/.installed';
     if (File(marker).existsSync()) return;
@@ -67,22 +81,16 @@ class SetupService {
               uri: Uri.parse(_rootfsUrl));
         }
 
-        final tarball = File('$_appDir/rootfs.tar.gz');
-        await tarball.writeAsBytes(
-          await response.fold<List<int>>(
-            [],
-            (prev, chunk) => prev..addAll(chunk),
-          ),
+        final data = await response.fold<List<int>>(
+          [],
+          (prev, chunk) => prev..addAll(chunk),
         );
+        final tarball = File('$_appDir/rootfs.tar.xz');
+        await tarball.writeAsBytes(data);
 
         onStatus('Extracting Debian rootfs...');
-        final result = await Process.run(
-          'tar',
-          ['xzf', tarball.path, '-C', _rootfsDir],
-        );
-        if (result.exitCode != 0) {
-          throw Exception('Extraction failed: ${result.stderr}');
-        }
+        await _extractArchive(tarball.path, _rootfsDir);
+
         await tarball.delete();
         await File(marker).writeAsString('done');
       } finally {
@@ -91,6 +99,25 @@ class SetupService {
     } catch (e) {
       onStatus('Download failed: $e');
       rethrow;
+    }
+  }
+
+  Future<void> _extractArchive(String archivePath, String outputDir) async {
+    final bytes = File(archivePath).readAsBytesSync();
+    final decompressed = XZDecoder().decodeBytes(bytes);
+    final tar = TarDecoder().decodeBytes(decompressed);
+    final strip = _detectStripCount(tar);
+
+    for (final entry in tar) {
+      final name = strip > 0 ? entry.name.split('/').skip(strip).join('/') : entry.name;
+      if (name.isEmpty) continue;
+      final dest = File('$outputDir/$name');
+      if (entry.isFile) {
+        await dest.parent.create(recursive: true);
+        await dest.writeAsBytes(entry.content as List<int>);
+      } else {
+        await dest.create(recursive: true);
+      }
     }
   }
 
